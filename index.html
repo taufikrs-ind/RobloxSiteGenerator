@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Roblox Site Generator</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mu:#667085;--bd:#d9dde3;--ac:#d92d20}
+@media(prefers-color-scheme:dark){:root{--bg:#14161a;--card:#1d2026;--tx:#e8eaed;--mu:#98a2b3;--bd:#343a44}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,sans-serif}
+main{max-width:920px;margin:0 auto;padding:20px;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:760px){main{grid-template-columns:1fr}}
+h1{grid-column:1/-1;margin:0;font-size:20px}h1 small{display:block;font-weight:400;color:var(--mu);font-size:13px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px}
+label{display:block;font-size:12px;color:var(--mu);margin:8px 0 2px}
+input[type=text],input[type=number]{width:100%;padding:7px 9px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+table{width:100%;border-collapse:collapse}td{padding:3px 4px 3px 0}th{font-size:12px;color:var(--mu);text-align:left;font-weight:500}
+button{padding:8px 14px;border-radius:6px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font:inherit;cursor:pointer}
+button.p{background:var(--ac);border-color:var(--ac);color:#fff;font-weight:600}
+.act{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+#info{font-size:13px;color:var(--mu);margin-top:10px;white-space:pre-line}
+svg{width:100%;height:auto;display:block;background:var(--bg);border-radius:8px}
+</style></head><body><main>
+<h1>Roblox Site Generator<small>Input data site → 1 file KML berisi Sektor + Site (gabungan)</small></h1>
+<section class="card">
+<label>ID Site</label><input type="text" id="sid" value="35KDR_0017">
+<div class="row"><div><label>Latitude pusat</label><input type="number" id="lat" step="any" value="-7.776590"></div>
+<div><label>Longitude pusat</label><input type="number" id="lon" step="any" value="112.011990"></div></div>
+<div class="row"><div><label>Radius clipping (m)</label><input type="number" id="rad" value="500"></div>
+<div><label>Ukuran grid (m)</label><input type="number" id="cell" value="30"></div></div>
+<label>Jarak antar sektor (m)</label><input type="number" id="gap" value="60">
+<label>Sektor (azimuth arah antena &amp; lebar sudut)</label>
+<table><thead><tr><th>#</th><th>Azimuth °</th><th>Beamwidth °</th><th></th></tr></thead><tbody id="sec"></tbody></table>
+<div class="act"><button id="add">+ Sektor</button></div>
+<label><input type="checkbox" id="inc"> Sertakan polygon Site (gabungan semua sektor, tanpa jarak)</label>
+<div class="act"><button class="p" id="gen">Generate</button><button id="dl" disabled>Download KML</button></div>
+<div id="info"></div>
+</section>
+<section class="card"><svg id="pv" viewBox="-260 -260 520 520"></svg></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+function addSec(az,bw){const n=$('sec').children.length+1,tr=document.createElement('tr');
+tr.innerHTML=`<td>${n}</td><td><input type="number" value="${az}"></td><td><input type="number" value="${bw}"></td><td><button>×</button></td>`;
+tr.querySelector('button').onclick=()=>{tr.remove();[...$('sec').children].forEach((r,i)=>r.firstChild.textContent=i+1)};
+$('sec').appendChild(tr)}
+[[0,120],[120,120],[240,120]].forEach(s=>addSec(...s));
+$('add').onclick=()=>addSec(0,120);
+
+// sel grid -> set; ring outline (staircase) dari tepi sel
+function cellsFor(R,s,secs,g=0){const N=Math.ceil(R/s)+1,set=new Set(),rad=Math.PI/180;
+for(let i=-N;i<N;i++)for(let j=-N;j<N;j++){const x=(i+.5)*s,y=(j+.5)*s,r=Math.hypot(x,y);
+if(r>R)continue;const b=(Math.atan2(x,y)/rad+360)%360;
+for(const [az,bw] of secs){let d=Math.abs(b-az)%360;if(d>180)d=360-d;if(d>bw/2)continue;
+let ok=true;if(g>0){const dl=((b-(az-bw/2)+540)%360)-180,dr=(((az+bw/2)-b+540)%360)-180;
+if(dl<90&&r*Math.sin(dl*rad)<g/2)ok=false;if(dr<90&&r*Math.sin(dr*rad)<g/2)ok=false}
+if(ok){set.add(i+','+j);break}}}
+return set}
+function outline(set){const out=new Map(),k=(a,b)=>a+','+b,has=(i,j)=>set.has(k(i,j));
+const push=(a,b,c,d)=>{const key=k(a,b);if(!out.has(key))out.set(key,[]);out.get(key).push([c,d])};
+for(const c of set){const [i,j]=c.split(',').map(Number);
+if(!has(i,j-1))push(i,j,i+1,j);if(!has(i+1,j))push(i+1,j,i+1,j+1);
+if(!has(i,j+1))push(i+1,j+1,i,j+1);if(!has(i-1,j))push(i,j+1,i,j)}
+let best=null,ba=0;
+while(out.size){const [sk,l]=out.entries().next().value;const st=sk.split(',').map(Number);let cur=st,ring=[st];
+for(;;){const key=k(...cur),l2=out.get(key);if(!l2)break;const nx=l2.pop();if(!l2.length)out.delete(key);
+if(nx[0]==st[0]&&nx[1]==st[1])break;ring.push(nx);cur=nx}
+let a=0;for(let q=0;q<ring.length;q++){const p=ring[q],r=ring[(q+1)%ring.length];a+=p[0]*r[1]-r[0]*p[1]}
+if(Math.abs(a)>ba){ba=Math.abs(a);best=ring}}
+if(!best)return[];
+best=best.filter((p,q,A)=>{const a=A[(q+A.length-1)%A.length],b=A[(q+1)%A.length];return (p[0]-a[0])*(b[1]-p[1])!=(p[1]-a[1])*(b[0]-p[0])});
+return best}
+let kml='';
+$('gen').onclick=()=>{
+const id=$('sid').value.trim(),lat=+$('lat').value,lon=+$('lon').value,R=+$('rad').value,s=+$('cell').value;
+const secs=[...$('sec').children].map(r=>[...r.querySelectorAll('input')].map(x=>+x.value));
+if(!id||isNaN(lat)||isNaN(lon)||!(R>0)||!(s>0)||!secs.length){$('info').textContent='Lengkapi input dulu.';return}
+const mLat=110574,mLon=111320*Math.cos(lat*Math.PI/180);
+const toLL=p=>`${(lon+p[0]*s/mLon).toFixed(10)},${(lat+p[1]*s/mLat).toFixed(10)},0.0`;
+const center=`Center: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+const items=[];let svg='';const cols=['#d92d20','#1570ef','#12b76a','#f79009','#7a5af8','#06aed4'];
+secs.forEach(([az,bw],n)=>{const set=cellsFor(R,s,[[az,bw]],+$('gap').value||0);items.push({name:`Sec ${n+1} - ${id}`,
+desc:`${id} - Sector ${n+1} (${set.size} points) | Clipping ${R}m (360°) | ${center}`,ring:outline(set),n:set.size})});
+if($('inc').checked){const set=cellsFor(R,s,secs);
+items.push({name:`Site ${id}`,desc:`${id} - Total ${items.reduce((a,b)=>a+b.n,0)} points | Clipping ${R}m (360°) | ${center}`,ring:outline(set)})}
+const pm=it=>{const c=it.ring.map(toLL);c.push(c[0]);
+return `    <Placemark>\n      <name>${it.name}</name>\n      <description>${it.desc}</description>\n      <styleUrl>#siteStyle</styleUrl>\n      <Polygon>\n        <outerBoundaryIs>\n          <LinearRing>\n            <coordinates>${c.join(' ')}</coordinates>\n          </LinearRing>\n        </outerBoundaryIs>\n      </Polygon>\n    </Placemark>`};
+kml=`<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2">\n  <Document>\n    <name>Site ${id}</name>\n    <Style id="siteStyle">\n      <LineStyle><color>ff0000ff</color><colorMode>normal</colorMode><width>3</width></LineStyle>\n      <PolyStyle><colorMode>normal</colorMode><fill>0</fill><outline>1</outline></PolyStyle>\n    </Style>\n    <Folder>\n      <name>${id}</name>\n${items.map(pm).join('\n')}\n    </Folder>\n  </Document>\n</kml>\n`;
+items.forEach((it,q)=>{const d=it.ring.map((p,i)=>(i?'L':'M')+(p[0]*s).toFixed(1)+' '+(-p[1]*s).toFixed(1)).join('')+'Z';
+const site=q==items.length-1&&$('inc').checked;
+svg+=`<path d="${d}" fill="none" stroke="${site?'#000':'#e00'}" stroke-width="${site?2:3}"/>`});
+const sc=250/R;$('pv').innerHTML=`<g transform="scale(${sc})"><circle r="${R}" fill="none" stroke="#999" stroke-dasharray="6 6" stroke-width="1"/>${svg}<circle r="4" fill="#000"/></g>`;
+$('info').textContent=items.map(i=>`${i.name}: ${i.ring.length} vertex`).join('\n');
+$('dl').disabled=false};
+$('dl').onclick=()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([kml],{type:'application/vnd.google-earth.kml+xml'}));
+a.download=`Site_${$('sid').value.trim()}.kml`;a.click()};
+$('gen').click();
+</script></body></html>
